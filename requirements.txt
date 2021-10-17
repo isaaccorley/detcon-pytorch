@@ -1,0 +1,5 @@
+torch
+torchvision
+kornia
+pytorch_lightning
+pytest
