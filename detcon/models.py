@@ -8,7 +8,6 @@ import torchvision
 
 from detcon.losses import DetConLoss
 
-
 default_augs = K.AugmentationSequential(
     K.RandomHorizontalFlip(p=0.5),
     K.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1, p=0.5),
