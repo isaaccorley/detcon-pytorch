@@ -6,6 +6,9 @@ import torch
 import torch.nn as nn
 import torchvision
 
+from detcon.losses import DetConLoss
+
+
 default_augs = K.AugmentationSequential(
     K.RandomHorizontalFlip(p=0.5),
     K.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1, p=0.5),
@@ -32,7 +35,7 @@ class DetConModule(pl.LightningModule):
         backbone: str = "resnet50",
         pretrained: bool = False,
         augs: Callable = default_augs,
-        loss_fn: nn.Module = nn.CrossEntropyLoss(),
+        loss_fn: nn.Module = DetConLoss(),
     ):
         super().__init__()
         self.augs = augs
