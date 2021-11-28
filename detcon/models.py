@@ -129,7 +129,7 @@ class DetConB(pl.LightningModule):
 
     def on_before_zero_grad(self, *args, **kwargs):
         """See https://forums.pytorchlightning.ai/t/adopting-exponential-moving-average-ema-for-pl-pipeline/488"""  # noqa: E501
-        self.encoder_ema.update(self.encoder.parameters())
+        self.network_ema.update(self.network.parameters())
 
     def forward(self, x: torch.Tensor, y: torch.Tensor) -> Sequence[torch.Tensor]:
         return self.network(x, y)
@@ -138,8 +138,8 @@ class DetConB(pl.LightningModule):
         (x1, x2), (y1, y2) = batch["image"], batch["mask"]
 
         # encode and project
-        e1, p1, m1, mids1 = self(x1, y1)
-        e2, p2, m2, mids2 = self(x2, y2)
+        _, p1, _, mids1 = self(x1, y1)
+        _, p2, _, mids2 = self(x2, y2)
 
         # ema encode and project
         _, pm1, _, midsm1 = self(x1, y1)
