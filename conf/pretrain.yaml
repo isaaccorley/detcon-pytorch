@@ -1,0 +1,20 @@
+module:
+    backbone: resnet18
+    pretrained: True
+    num_classes: 21
+    num_samples: 5
+    downsample: 32
+    proj_hidden_dim: 128
+    proj_dim: 256
+
+datamodule:
+    root: /mnt/e/data/
+    batch_size: 32
+    num_workers: 4
+    prefetch_factor: 2
+
+trainer:
+    max_epochs: 5
+    precision: 16
+    gpus: 1
+    log_every_n_steps: 25

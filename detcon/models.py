@@ -4,7 +4,7 @@ import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torchvision
-from einops import rearrange, reduce
+from einops import rearrange
 from torch_ema import ExponentialMovingAverage
 
 from detcon.losses import DetConBLoss
@@ -51,11 +51,11 @@ class MaskPooling(nn.Module):
         if masks.ndim < 4:
             masks = masks.unsqueeze(dim=1)
 
-        masks = masks == self.mask_ids[None, :, None, None]
+        masks = masks == self.mask_ids[None, :, None, None].to(masks.device)
         masks = self.pool(masks.to(torch.float))
         masks = rearrange(masks, "b c h w -> b c (h w)")
         masks = torch.argmax(masks, dim=1)
-        masks = torch.eye(self.num_classes)[masks]
+        masks = torch.eye(self.num_classes).to(masks.device)[masks]
         masks = rearrange(masks, "b d c -> b c d")
         return masks
 
@@ -135,9 +135,7 @@ class DetConB(pl.LightningModule):
             downsample=downsample,
             num_samples=num_samples,
         )
-        self.ema = ExponentialMovingAverage(
-            self.network.parameters(), decay=0.995
-        )
+        self.ema = ExponentialMovingAverage(self.network.parameters(), decay=0.995)
         self.temperature = nn.Parameter(torch.tensor(0.0))
         self.predictor = MLP(proj_dim, proj_hidden_dim, proj_dim)
 
@@ -146,6 +144,7 @@ class DetConB(pl.LightningModule):
 
     def on_before_zero_grad(self, *args, **kwargs):
         """See https://forums.pytorchlightning.ai/t/adopting-exponential-moving-average-ema-for-pl-pipeline/488"""  # noqa: E501
+        self.ema.to(device=next(self.network.parameters()).device)
         self.ema.update(self.network.parameters())
 
     def forward(self, x: torch.Tensor, y: torch.Tensor) -> Sequence[torch.Tensor]:
@@ -167,20 +166,6 @@ class DetConB(pl.LightningModule):
         q1, q2 = self.predictor(p1), self.predictor(p2)
 
         # compute loss
-        loss_inputs = {
-            "pred1": q1.shape,
-            "pred2": q2.shape,
-            "target1": ema_p1.shape,
-            "target2": ema_p2.shape,
-            "pind1": ids1.shape,
-            "pind2": ids2.shape,
-            "tind1": ema_ids1.shape,
-            "tind2": ema_ids2.shape,
-            "temperature": temperature.shape
-        }
-        for k, v in loss_inputs.items():
-            print(k, v.shape, v.dtype)
-
         loss = self.loss_fn(
             pred1=q1,
             pred2=q2,

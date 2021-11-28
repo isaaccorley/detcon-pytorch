@@ -8,3 +8,4 @@ pytest
 black
 isort[colors]
 flake8
+omegaconf
