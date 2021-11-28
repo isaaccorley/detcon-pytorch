@@ -3,7 +3,7 @@ import pytorch_lightning as pl
 
 from detcon.datasets import VOCSSLDataModule
 
-ROOT = "/mnt/e/data/"
+ROOT = "data"
 
 
 @pytest.fixture(scope="package")

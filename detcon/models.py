@@ -95,14 +95,13 @@ class Network(nn.Module):
 
 
 class DetConB(pl.LightningModule):
-
     def __init__(
         self,
         num_classes: int = 21,
         num_samples: int = 5,
         backbone: str = "resnet50",
         pretrained: bool = False,
-        downsample: int= 32,
+        downsample: int = 32,
         proj_hidden_dim: int = 128,
         proj_dim: int = 256,
         loss_fn: nn.Module = DetConBLoss(),
@@ -117,7 +116,7 @@ class DetConB(pl.LightningModule):
             output_dim=proj_dim,
             num_classes=num_classes,
             downsample=downsample,
-            num_samples=num_samples
+            num_samples=num_samples,
         )
         self.network_ema = ExponentialMovingAverage(
             self.network.parameters(), decay=0.995

@@ -2,7 +2,6 @@ from typing import Any, Generator
 
 import pytest
 import pytorch_lightning as pl
-import torch
 from _pytest.monkeypatch import MonkeyPatch
 
 from detcon.models import DetConB

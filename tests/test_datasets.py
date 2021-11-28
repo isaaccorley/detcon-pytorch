@@ -1,6 +1,6 @@
 from detcon.datasets import VOCSegmentationDataModule, VOCSSLDataModule
 
-ROOT = "/mnt/e/data/"
+ROOT = "data"
 SHAPE = (224, 224)
 
 
