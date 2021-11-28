@@ -1,5 +1,6 @@
-from typing import Callable, Optional, Tuple
+from typing import Callable, Dict, Optional, Tuple
 
+import kornia.augmentation as K
 import pytorch_lightning as pl
 import torch
 import torchvision.transforms as T
@@ -7,21 +8,44 @@ from torch.utils.data import DataLoader
 from torchvision.datasets import VOCSegmentation
 from torchvision.transforms import InterpolationMode
 
+
+class RandomResizedCrop(K.RandomResizedCrop):
+    def __init__(self, *args, **kwargs) -> None:
+        if kwargs["align_corners"] is None:
+            kwargs["align_corners"] = False
+        super().__init__(*args, **kwargs)
+        self.align_corners = None
+
+
 default_transform = T.Compose(
-    [
-        T.ToTensor(),
-        T.Resize(size=(256, 256), interpolation=InterpolationMode.BILINEAR),
-    ]
+    [T.ToTensor(), T.Resize(size=(224, 224), interpolation=InterpolationMode.BILINEAR)]
 )
+
 default_target_transform = T.Compose(
     [
         T.PILToTensor(),
-        T.Resize(size=(256, 256), interpolation=InterpolationMode.NEAREST),
+        T.Resize(size=(224, 224), interpolation=InterpolationMode.NEAREST),
     ]
 )
 
+default_augs = K.AugmentationSequential(
+    K.RandomHorizontalFlip(p=0.5), data_keys=["input", "mask"]
+)
 
-class VOCSegmentationDataModule(pl.LightningDataModule):
+default_ssl_augs = K.AugmentationSequential(
+    K.RandomHorizontalFlip(p=0.5),
+    K.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1, p=0.5),
+    K.RandomGrayscale(p=0.2),
+    K.RandomGaussianBlur(kernel_size=(23, 23), sigma=(0.1, 2.0), p=0.5),
+    RandomResizedCrop(
+        size=(256, 256), scale=(0.08, 1.0), resample="NEAREST", align_corners=None
+    ),
+    K.RandomSolarize(thresholds=0.1, p=0.2),
+    data_keys=["input", "mask"],
+)
+
+
+class VOCSegmentationBaseDataModule(pl.LightningDataModule):
 
     classes = [
         "background",
@@ -53,9 +77,10 @@ class VOCSegmentationDataModule(pl.LightningDataModule):
         transform: Optional[Callable] = default_transform,
         target_transform: Optional[Callable] = default_target_transform,
         transforms: Optional[Callable] = None,
+        augmentations: K.AugmentationSequential = default_augs,
         batch_size: int = 1,
         num_workers: int = 0,
-        prefetch_factor: int = 2,
+        prefetch_factor: Optional[int] = 2,
         pin_memory: bool = False,
     ):
         super().__init__()
@@ -63,6 +88,7 @@ class VOCSegmentationDataModule(pl.LightningDataModule):
         self.transform = transform
         self.target_transform = target_transform
         self.transforms = transforms
+        self.augmentations = augmentations
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.prefetch_factor = prefetch_factor
@@ -70,6 +96,28 @@ class VOCSegmentationDataModule(pl.LightningDataModule):
         self.num_classes = len(self.classes)
         self.idx2class = {i: c for i, c in enumerate(self.classes)}
         self.idx2class[255] = "ignore"
+
+    def train_dataloader(self) -> DataLoader:
+        return DataLoader(
+            self.train_dataset,
+            shuffle=True,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            prefetch_factor=self.prefetch_factor,
+            pin_memory=self.pin_memory,
+        )
+
+    def on_before_batch_transfer(
+        self, batch: Tuple[torch.Tensor, torch.Tensor], dataloader_idx: int
+    ) -> Dict[str, torch.Tensor]:
+        x, y = batch
+        y[y == 255] = 0
+        return {"image": x, "mask": y}
+
+
+class VOCSegmentationDataModule(VOCSegmentationBaseDataModule):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
 
     def setup(self, stage: Optional[str] = None):
         self.train_dataset = VOCSegmentation(
@@ -97,16 +145,6 @@ class VOCSegmentationDataModule(pl.LightningDataModule):
             transforms=self.transforms,
         )
 
-    def train_dataloader(self) -> DataLoader:
-        return DataLoader(
-            self.train_dataset,
-            shuffle=True,
-            batch_size=self.batch_size,
-            num_workers=self.num_workers,
-            prefetch_factor=self.prefetch_factor,
-            pin_memory=self.pin_memory,
-        )
-
     def val_dataloader(self) -> DataLoader:
         return DataLoader(
             self.val_dataset,
@@ -125,9 +163,40 @@ class VOCSegmentationDataModule(pl.LightningDataModule):
             pin_memory=self.pin_memory,
         )
 
-    def on_before_batch_transfer(
-        self, batch: Tuple[torch.Tensor, torch.Tensor], dataloader_idx: int
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        x, y = batch
-        y[y == 255] = 0
-        return x, y
+    def on_after_batch_transfer(
+        self, batch: Dict[str, torch.Tensor], dataloader_idx: int
+    ) -> Dict[str, torch.Tensor]:
+        batch["mask"] = batch["mask"].to(torch.float)
+        batch["image"], batch["mask"] = self.augmentations(
+            batch["image"], batch["mask"]
+        )
+        batch["mask"] = batch["mask"].to(torch.long)
+        batch["mask"] = batch["mask"].squeeze(dim=1)
+        return batch
+
+
+class VOCSSLDataModule(VOCSegmentationBaseDataModule):
+    def __init__(self, *args, **kwargs) -> None:
+        kwargs["augmentations"] = default_ssl_augs
+        super().__init__(*args, **kwargs)
+
+    def setup(self, stage: Optional[str] = None) -> None:
+        self.train_dataset = VOCSegmentation(
+            root=self.root,
+            year="2012",
+            image_set="train",
+            transform=self.transform,
+            target_transform=self.target_transform,
+            transforms=self.transforms,
+        )
+
+    def on_after_batch_transfer(
+        self, batch: Dict[str, torch.Tensor], dataloader_idx: int
+    ) -> Dict[str, torch.Tensor]:
+        batch["mask"] = batch["mask"].to(torch.float)
+        image1, mask1 = self.augmentations(batch["image"], batch["mask"])
+        image2, mask2 = self.augmentations(batch["image"], batch["mask"])
+        mask1 = mask1.squeeze(dim=1).to(torch.long)
+        mask2 = mask2.squeeze(dim=1).to(torch.long)
+        batch = {"image": (image1, image2), "mask": (mask1, mask2)}
+        return batch

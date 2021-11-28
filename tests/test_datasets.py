@@ -1,37 +1,30 @@
-import torch
-
-from detcon.datasets import VOCSegmentationDataModule
+from detcon.datasets import VOCSegmentationDataModule, VOCSSLDataModule
 
 ROOT = "/mnt/e/data/"
+SHAPE = (224, 224)
 
 
 def test_voc_segmentation_datamodule() -> None:
-    dm = VOCSegmentationDataModule(
-        root=ROOT,
-        batch_size=1,
-        num_workers=1,
-        prefetch_factor=1,
-        pin_memory=False,
-    )
+    dm = VOCSegmentationDataModule(root=ROOT)
     dm.setup()
 
-    # Train
-    x, y = next(iter(dm.train_dataloader()))
-    assert x.shape == (1, 3, 256, 256)
-    assert y.shape == (1, 1, 256, 256)
-    assert x.dtype == torch.float32
-    assert y.dtype == torch.uint8
+    batch = next(iter(dm.train_dataloader()))
+    batch = dm.on_before_batch_transfer(batch, 0)
+    batch = dm.on_after_batch_transfer(batch, 0)
 
-    # Val
-    x, y = next(iter(dm.val_dataloader()))
-    assert x.shape == (1, 3, 256, 256)
-    assert y.shape == (1, 1, 256, 256)
-    assert x.dtype == torch.float32
-    assert y.dtype == torch.uint8
+    batch = next(iter(dm.val_dataloader()))
+    batch = dm.on_before_batch_transfer(batch, 0)
+    batch = dm.on_after_batch_transfer(batch, 0)
 
-    # Test
-    x, y = next(iter(dm.test_dataloader()))
-    assert x.shape == (1, 3, 256, 256)
-    assert y.shape == (1, 1, 256, 256)
-    assert x.dtype == torch.float32
-    assert y.dtype == torch.uint8
+    batch = next(iter(dm.test_dataloader()))
+    batch = dm.on_before_batch_transfer(batch, 0)
+    batch = dm.on_after_batch_transfer(batch, 0)
+
+
+def test_voc_ssl_segmentation_datamodule() -> None:
+    dm = VOCSSLDataModule(root=ROOT)
+    dm.setup()
+
+    batch = next(iter(dm.train_dataloader()))
+    batch = dm.on_before_batch_transfer(batch, 0)
+    batch = dm.on_after_batch_transfer(batch, 0)

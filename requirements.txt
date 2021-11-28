@@ -1,5 +1,10 @@
 torch
 torchvision
 kornia
+einops
 pytorch_lightning
+torch-ema
 pytest
+black
+isort[colors]
+flake8

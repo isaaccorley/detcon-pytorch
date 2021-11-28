@@ -1,1 +1,2 @@
-from .models import DetConSModule
+from . import datasets, losses
+from .models import DetConB
