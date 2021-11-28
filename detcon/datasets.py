@@ -38,7 +38,7 @@ default_ssl_augs = K.AugmentationSequential(
     K.RandomGrayscale(p=0.2),
     K.RandomGaussianBlur(kernel_size=(23, 23), sigma=(0.1, 2.0), p=0.5),
     RandomResizedCrop(
-        size=(256, 256), scale=(0.08, 1.0), resample="NEAREST", align_corners=None
+        size=(224, 224), scale=(0.08, 1.0), resample="NEAREST", align_corners=None
     ),
     K.RandomSolarize(thresholds=0.1, p=0.2),
     data_keys=["input", "mask"],

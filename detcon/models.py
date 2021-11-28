@@ -14,7 +14,7 @@ class MLP(nn.Sequential):
     def __init__(self, input_dim: int, hidden_dim: int, output_dim: int) -> None:
         super().__init__(
             nn.Linear(input_dim, hidden_dim),
-            nn.BatchNorm1d(num_features=hidden_dim),
+            nn.LayerNorm(hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, output_dim),
         )
@@ -40,22 +40,40 @@ class MaskPooling(nn.Module):
         self.pool = nn.AvgPool2d(kernel_size=downsample, stride=downsample)
 
     def pool_masks(self, masks: torch.Tensor) -> torch.Tensor:
-        """Create binary masks, average pool, flatten, argmax,"""
+        """Create binary masks and performs mask pooling
+
+        Args:
+            masks: (b, 1, h, w)
+
+        Returns:
+            masks: (b, num_classes, d)
+        """
+        if masks.ndim < 4:
+            masks = masks.unsqueeze(dim=1)
+
         masks = masks == self.mask_ids[None, :, None, None]
         masks = self.pool(masks.to(torch.float))
         masks = rearrange(masks, "b c h w -> b c (h w)")
         masks = torch.argmax(masks, dim=1)
         masks = torch.eye(self.num_classes)[masks]
+        masks = rearrange(masks, "b d c -> b c d")
         return masks
 
     def sample_masks(self, masks: torch.Tensor) -> torch.Tensor:
-        """Samples which binary masks to use in the loss."""
+        """Samples which binary masks to use in the loss.
+
+        Args:
+            masks: (b, num_classes, d)
+
+        Returns:
+            masks: (b, num_samples, d)
+        """
         bs = masks.shape[0]
         mask_exists = torch.greater(masks.sum(dim=-1), 1e-3)
-        sel_masks = mask_exists.to(torch.float) + 0.00000000001
-        sel_masks = sel_masks / sel_masks.sum(dim=1, keepdim=True)
-        sel_masks = torch.log(sel_masks)
-        print(sel_masks)
+        sel_masks = mask_exists.to(torch.float) + 1e-11
+        # torch.multinomial handles normalizing
+        # sel_masks = sel_masks / sel_masks.sum(dim=1, keepdim=True)
+        # sel_masks = torch.softmax(sel_masks, dim=-1)
         mask_ids = torch.multinomial(sel_masks, num_samples=self.num_samples)
         sampled_masks = torch.stack([masks[b][mask_ids[b]] for b in range(bs)])
         return sampled_masks, mask_ids
@@ -63,8 +81,8 @@ class MaskPooling(nn.Module):
     def forward(self, masks: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         binary_masks = self.pool_masks(masks)
         sampled_masks, sampled_mask_ids = self.sample_masks(binary_masks)
-        area = sampled_masks.sum(dim=-1, keepdims=True)
-        sampled_masks = sampled_masks / torch.maximum(area, 1.0)
+        area = sampled_masks.sum(dim=-1, keepdim=True)
+        sampled_masks = sampled_masks / torch.maximum(area, torch.tensor(1.0))
         return sampled_masks, sampled_mask_ids
 
 
@@ -86,12 +104,11 @@ class Network(nn.Module):
 
     def forward(self, x: torch.Tensor, masks: torch.Tensor) -> Sequence[torch.Tensor]:
         m, mids = self.mask_pool(masks)
-        e2d = self.encoder(x)
-        e1d = reduce(e2d, "b c h w -> b c ()", reduction="mean")
-        e1d = m * e1d.t()
-        m, mids = self.mask_pool(masks)
-        p = self.projector(e1d)
-        return e1d, p, m, mids
+        e = self.encoder(x)
+        e = rearrange(e, "b c h w -> b (h w) c")
+        e = m @ e
+        p = self.projector(e)
+        return e, p, m, mids
 
 
 class DetConB(pl.LightningModule):
@@ -118,7 +135,7 @@ class DetConB(pl.LightningModule):
             downsample=downsample,
             num_samples=num_samples,
         )
-        self.network_ema = ExponentialMovingAverage(
+        self.ema = ExponentialMovingAverage(
             self.network.parameters(), decay=0.995
         )
         self.temperature = nn.Parameter(torch.tensor(0.0))
@@ -129,7 +146,7 @@ class DetConB(pl.LightningModule):
 
     def on_before_zero_grad(self, *args, **kwargs):
         """See https://forums.pytorchlightning.ai/t/adopting-exponential-moving-average-ema-for-pl-pipeline/488"""  # noqa: E501
-        self.network_ema.update(self.network.parameters())
+        self.ema.update(self.network.parameters())
 
     def forward(self, x: torch.Tensor, y: torch.Tensor) -> Sequence[torch.Tensor]:
         return self.network(x, y)
@@ -138,26 +155,41 @@ class DetConB(pl.LightningModule):
         (x1, x2), (y1, y2) = batch["image"], batch["mask"]
 
         # encode and project
-        _, p1, _, mids1 = self(x1, y1)
-        _, p2, _, mids2 = self(x2, y2)
+        _, p1, _, ids1 = self(x1, y1)
+        _, p2, _, ids2 = self(x2, y2)
 
         # ema encode and project
-        _, pm1, _, midsm1 = self(x1, y1)
-        _, pm2, _, midsm2 = self(x2, y2)
+        with self.ema.average_parameters():
+            _, ema_p1, _, ema_ids1 = self(x1, y1)
+            _, ema_p2, _, ema_ids2 = self(x2, y2)
 
         # predict
         q1, q2 = self.predictor(p1), self.predictor(p2)
 
         # compute loss
+        loss_inputs = {
+            "pred1": q1.shape,
+            "pred2": q2.shape,
+            "target1": ema_p1.shape,
+            "target2": ema_p2.shape,
+            "pind1": ids1.shape,
+            "pind2": ids2.shape,
+            "tind1": ema_ids1.shape,
+            "tind2": ema_ids2.shape,
+            "temperature": temperature.shape
+        }
+        for k, v in loss_inputs.items():
+            print(k, v.shape, v.dtype)
+
         loss = self.loss_fn(
             pred1=q1,
             pred2=q2,
-            target1=pm1.detach(),
-            target2=pm2.detach(),
-            pind1=mids1,
-            pind2=mids2,
-            tind1=midsm1,
-            tind2=midsm2,
+            target1=ema_p1.detach(),
+            target2=ema_p2.detach(),
+            pind1=ids1,
+            pind2=ids2,
+            tind1=ema_ids1,
+            tind2=ema_ids2,
             temperature=self.temperature,
         )
         self.log("loss", loss)
