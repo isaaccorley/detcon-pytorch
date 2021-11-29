@@ -1,7 +1,6 @@
 from detcon.datasets import VOCSegmentationDataModule, VOCSSLDataModule
 
 ROOT = "data"
-SHAPE = (224, 224)
 
 
 def test_voc_segmentation_datamodule() -> None:

@@ -5,13 +5,17 @@ import torch.nn.functional as F
 
 def manual_cross_entropy(
     labels: torch.Tensor, logits: torch.Tensor, weight: torch.Tensor
-):
+) -> torch.Tensor:
     ce = -weight * torch.sum(labels * F.log_softmax(logits, dim=-1), dim=-1)
     return torch.mean(ce)
 
 
 class DetConBLoss(nn.Module):
     """Modified from https://github.com/deepmind/detcon/blob/main/utils/losses.py."""
+
+    def __init__(self, temperature: float = 0.1) -> None:
+        super().__init__()
+        self.temperature = torch.tensor(temperature)
 
     def forward(
         self,
@@ -23,7 +27,6 @@ class DetConBLoss(nn.Module):
         pind2: torch.Tensor,
         tind1: torch.Tensor,
         tind2: torch.Tensor,
-        temperature: torch.Tensor,
         local_negatives: bool = True,
     ) -> torch.Tensor:
         """Compute the NCE scores from pairs of predictions and targets.
@@ -48,6 +51,7 @@ class DetConBLoss(nn.Module):
         """
         bs, num_samples, num_features = pred1.shape
         infinity_proxy = 1e9  # Used for masks to proxy a very large number.
+        eps = 1e-11
 
         def make_same_obj(ind_0, ind_1):
             same_obj = torch.eq(
@@ -71,10 +75,18 @@ class DetConBLoss(nn.Module):
         labels = labels.unsqueeze(dim=2).unsqueeze(dim=1)
 
         # Do our matmuls and mask out appropriately.
-        logits_aa = torch.einsum("abk,uvk->abuv", pred1, target1) / temperature
-        logits_bb = torch.einsum("abk,uvk->abuv", pred2, target2) / temperature
-        logits_ab = torch.einsum("abk,uvk->abuv", pred1, target2) / temperature
-        logits_ba = torch.einsum("abk,uvk->abuv", pred2, target1) / temperature
+        logits_aa = torch.einsum("abk,uvk->abuv", pred1, target1) / (
+            self.temperature + eps
+        )
+        logits_bb = torch.einsum("abk,uvk->abuv", pred2, target2) / (
+            self.temperature + eps
+        )
+        logits_ab = torch.einsum("abk,uvk->abuv", pred1, target2) / (
+            self.temperature + eps
+        )
+        logits_ba = torch.einsum("abk,uvk->abuv", pred2, target1) / (
+            self.temperature + eps
+        )
 
         labels_aa = labels * same_obj_aa
         labels_ab = labels * same_obj_ab

@@ -136,7 +136,6 @@ class DetConB(pl.LightningModule):
             num_samples=num_samples,
         )
         self.ema = ExponentialMovingAverage(self.network.parameters(), decay=0.995)
-        self.temperature = nn.Parameter(torch.tensor(0.0))
         self.predictor = MLP(proj_dim, proj_hidden_dim, proj_dim)
 
     def configure_optimizers(self) -> torch.optim.Optimizer:
@@ -175,7 +174,6 @@ class DetConB(pl.LightningModule):
             pind2=ids2,
             tind1=ema_ids1,
             tind2=ema_ids2,
-            temperature=self.temperature,
         )
         self.log("loss", loss)
         return loss

@@ -8,16 +8,19 @@ from detcon.losses import DetConBLoss
 
 @pytest.fixture
 def loss_inputs() -> Dict[str, torch.Tensor]:
+    num_samples = 16
+    batch_size = 2
+    dim = 256
+    num_classes = 21
     return {
-        "pred1": torch.randn(2, 5, 256),
-        "pred2": torch.randn(2, 5, 256),
-        "target1": torch.randn(2, 5, 256),
-        "target2": torch.randn(2, 5, 256),
-        "pind1": torch.randint(low=0, high=10, size=(2, 5)),
-        "pind2": torch.randint(low=0, high=10, size=(2, 5)),
-        "tind1": torch.randint(low=0, high=10, size=(2, 5)),
-        "tind2": torch.randint(low=0, high=10, size=(2, 5)),
-        "temperature": torch.tensor(0.0),
+        "pred1": torch.randn(batch_size, num_samples, dim),
+        "pred2": torch.randn(batch_size, num_samples, dim),
+        "target1": torch.randn(batch_size, num_samples, dim),
+        "target2": torch.randn(batch_size, num_samples, dim),
+        "pind1": torch.randint(low=0, high=num_classes, size=(batch_size, num_samples)),
+        "pind2": torch.randint(low=0, high=num_classes, size=(batch_size, num_samples)),
+        "tind1": torch.randint(low=0, high=num_classes, size=(batch_size, num_samples)),
+        "tind2": torch.randint(low=0, high=num_classes, size=(batch_size, num_samples)),
     }
 
 
