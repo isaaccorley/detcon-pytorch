@@ -3,14 +3,22 @@ from typing import Callable, Dict, Optional, Tuple
 import kornia.augmentation as K
 import pytorch_lightning as pl
 import torch
+import torchvision.transforms as T
 from torch.utils.data import DataLoader
 from torchvision.datasets import VOCSegmentation
+from torchvision.transforms import InterpolationMode
 
-from detcon.datasets.transforms import (
-    default_augs,
-    default_ssl_augs,
-    default_target_transform,
-    default_transform,
+from detcon.datasets.transforms import default_augs, default_ssl_augs
+
+default_transform = T.Compose(
+    [T.ToTensor(), T.Resize(size=(224, 224), interpolation=InterpolationMode.BILINEAR)]
+)
+
+default_target_transform = T.Compose(
+    [
+        T.PILToTensor(),
+        T.Resize(size=(224, 224), interpolation=InterpolationMode.NEAREST),
+    ]
 )
 
 

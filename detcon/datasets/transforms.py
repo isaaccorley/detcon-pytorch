@@ -1,6 +1,4 @@
 import kornia.augmentation as K
-import torchvision.transforms as T
-from torchvision.transforms import InterpolationMode
 
 
 class RandomResizedCrop(K.RandomResizedCrop):
@@ -10,17 +8,6 @@ class RandomResizedCrop(K.RandomResizedCrop):
         super().__init__(*args, **kwargs)
         self.align_corners = None
 
-
-default_transform = T.Compose(
-    [T.ToTensor(), T.Resize(size=(224, 224), interpolation=InterpolationMode.BILINEAR)]
-)
-
-default_target_transform = T.Compose(
-    [
-        T.PILToTensor(),
-        T.Resize(size=(224, 224), interpolation=InterpolationMode.NEAREST),
-    ]
-)
 
 default_augs = K.AugmentationSequential(
     K.RandomHorizontalFlip(p=0.5), data_keys=["input", "mask"]
