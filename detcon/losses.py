@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 
 def manual_cross_entropy(
-    labels: torch.Tensor, logits: torch.Tensor, weight: torch.Tensor
+    logits: torch.Tensor, labels: torch.Tensor, weight: torch.Tensor
 ) -> torch.Tensor:
     ce = -weight * torch.sum(labels * F.log_softmax(logits, dim=-1), dim=-1)
     return torch.mean(ce)
